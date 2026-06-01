@@ -21,33 +21,43 @@ export default function AuthPage() {
     const error = params.get('error');
 
     if (error) {
-      Promise.resolve().then(() => {
-        setStatus('error');
-        setErrorMsg('Authentication failed. Please try again.');
-      });
+      setStatus('error');
+      setErrorMsg('Authentication failed. Please try again.');
       window.history.replaceState({}, '', '/auth');
       return;
     }
 
     if (accessToken) {
-      Promise.resolve().then(() => setStatus('processing'));
+      setStatus('processing');
       setToken(accessToken);
       window.history.replaceState({}, '', '/auth');
       navigate('/mode', { replace: true });
       return;
     }
 
-    // If already authenticated, skip straight to mode select
     if (isAuthenticated()) {
       navigate('/mode', { replace: true });
     }
   }, [navigate, posthog]);
 
   const handleGoogleLogin = () => {
-    window.location.href = api.loginUrl();
+    try {
+      setStatus('processing');
+      const loginUrl = api.loginUrl();
+      
+      if (!loginUrl) {
+        throw new Error("Login URL configuration missing");
+      }
+      
+      // Force full browser navigation for OAuth
+      window.location.href = loginUrl;
+    } catch (err) {
+      setStatus('error');
+      setErrorMsg('Could not initiate Google Login. Please check your network connection.');
+      console.error("Auth initiation failed:", err);
+    }
   };
 
-  /** Dev-only: skip OAuth entirely, store the bypass token, go straight to /mode */
   const handleDevLogin = () => {
     setToken(DEV_BYPASS_TOKEN);
     posthog?.identify('dev-user', { email: 'dev@local' });
@@ -55,7 +65,7 @@ export default function AuthPage() {
   };
 
   const terminalMessages = (() => {
-    if (status === 'processing') return ['AUTH_SUCCESS', 'REDIRECTING...'];
+    if (status === 'processing') return ['AUTH_INITIATED', 'REDIRECTING_TO_OAUTH...'];
     if (status === 'error') return ['AUTH_ERROR', 'RETRY_REQUIRED'];
     return ['AUTHENTICATION', 'PROTOCOL: OAUTH-SECURE'];
   })();
@@ -110,7 +120,6 @@ export default function AuthPage() {
             {status === 'processing' ? 'AUTHENTICATING...' : 'CONTINUE_WITH_GOOGLE'}
           </button>
 
-          {/* DEV ONLY — shown only when VITE_DEV_MODE=true in .env.local */}
           {IS_DEV_MODE && (
             <button
               type="button"
@@ -122,13 +131,6 @@ export default function AuthPage() {
               <span className="text-yellow-500/50 text-[10px]">[local only]</span>
             </button>
           )}
-        </div>
-
-        <div className="mt-12 pt-6 border-t border-outline-variant/15">
-          <StatusTerminal
-            messages={['SYS_STAT: ONLINE', 'UPTIME: 99.97%']}
-            className="justify-center mt-4"
-          />
         </div>
       </div>
     </div>

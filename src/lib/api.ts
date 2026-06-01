@@ -1,3 +1,4 @@
+import toast from 'react-hot-toast';
 import type {
   ScanResult,
   HistoryScan,
@@ -36,10 +37,39 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// ── Core fetch wrapper ────────────────────────────────────────────────────────
+// ── Shared Error Handling Logic ──────────────────────────────────────────────
+
+async function handleResponse(res: Response): Promise<Response> {
+  if (res.ok) return res;
+
+  // Handle 5xx errors (Server Side)
+  if (res.status >= 500) {
+    toast.error("Server error. Please try again later.");
+  } else {
+    // Handle 4xx errors
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
+  }
+  
+  throw new Error(`HTTP ${res.status}`);
+}
+
+// Reusable wrapper to catch network-level drops
+async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    const res = await fetch(input, init);
+    return await handleResponse(res);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      toast.error("Unable to connect to the server. Please check your internet connection.");
+    }
+    console.error("API Error:", error);
+    throw error;
+  }
+}
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const validRes = await safeFetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -47,98 +77,55 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
       ...(options.headers as Record<string, string> || {}),
     },
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
-  }
-
-  return res.json() as Promise<T>;
+  return validRes.json() as Promise<T>;
 }
 
 // ── Response envelopes ────────────────────────────────────────────────────────
 
-export interface ScanResponse {
-  success: boolean;
-  scan: ScanResult;
-}
-
-export interface HistoryResponse {
-  success: boolean;
-  count: number;
-  stats: HistoryStats;
-  scans: HistoryScan[];
-}
-
-export interface MarketsResponse {
-  success: boolean;
-  markets: Market[];
-}
-
-export interface GradcamResponse {
-  gradcam_image: string;   // base64 data-URI
-  predicted_class: string;
-  class_index: number;   // 0 | 1 | 2
-  mode: 'real' | 'demo';
-}
+export interface ScanResponse { success: boolean; scan: ScanResult; }
+export interface HistoryResponse { success: boolean; count: number; stats: HistoryStats; scans: HistoryScan[]; }
+export interface MarketsResponse { success: boolean; markets: Market[]; }
+export interface GradcamResponse { gradcam_image: string; predicted_class: string; class_index: number; mode: 'real' | 'demo'; }
 
 // ── API surface ───────────────────────────────────────────────────────────────
 
 export const api = {
-  // Auth
   loginUrl: (): string => `${API_BASE}/api/v1/auth/login/google`,
 
-  getMe: (): Promise<UserProfile> =>
-    apiFetch<UserProfile>('/api/v1/auth/me'),
+  getMe: (): Promise<UserProfile> => apiFetch<UserProfile>('/api/v1/auth/me'),
 
-  // Scans
+  // Scans - Using safeFetch to ensure network errors are caught
   submitScan: async (blob: Blob): Promise<ScanResponse> => {
     const form = new FormData();
     form.append('image', blob, 'scan.jpg');
 
-    const res = await fetch(`${API_BASE}/api/v1/scan-auto`, {
+    const validRes = await safeFetch(`${API_BASE}/api/v1/scan-auto`, {
       method: 'POST',
       headers: authHeaders(),
       body: form,
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
-    }
-
-    return res.json() as Promise<ScanResponse>;
+    return validRes.json() as Promise<ScanResponse>;
   },
 
-  getLatestScan: (): Promise<ScanResponse> =>
-    apiFetch<ScanResponse>('/api/v1/scans/latest'),
-
-  getScan: (id: string): Promise<ScanResponse> =>
-    apiFetch<ScanResponse>(`/api/v1/scans/${id}`),
-
-  getScanHistory: (limit = 20, offset = 0): Promise<HistoryResponse> =>
+  getLatestScan: (): Promise<ScanResponse> => apiFetch<ScanResponse>('/api/v1/scans/latest'),
+  getScan: (id: string): Promise<ScanResponse> => apiFetch<ScanResponse>(`/api/v1/scans/${id}`),
+  getScanHistory: (limit = 20, offset = 0): Promise<HistoryResponse> => 
     apiFetch<HistoryResponse>(`/api/v1/scans/history?limit=${limit}&offset=${offset}`),
 
-  // Grad-CAM
+  // Grad-CAM - Using safeFetch to ensure network errors are caught
   getGradcam: async (blob: Blob): Promise<GradcamResponse> => {
     const form = new FormData();
     form.append('image', blob, 'gradcam_input.jpg');
 
-    const res = await fetch(`${API_BASE}/api/v1/gradcam`, {
+    const validRes = await safeFetch(`${API_BASE}/api/v1/gradcam`, {
       method: 'POST',
       headers: authHeaders(),
       body: form,
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
-    }
-
-    return res.json() as Promise<GradcamResponse>;
+    return validRes.json() as Promise<GradcamResponse>;
   },
 
-  // Map
-  getMarkets: (): Promise<MarketsResponse> =>
-    apiFetch<MarketsResponse>('/api/v1/maps/markets'),
+  getMarkets: (): Promise<MarketsResponse> => apiFetch<MarketsResponse>('/api/v1/maps/markets'),
 };
