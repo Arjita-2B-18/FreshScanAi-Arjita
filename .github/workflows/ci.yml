@@ -97,6 +97,13 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          # Check if HF_TOKEN is set
+          if [ -z "${HF_TOKEN}" ]; then
+            echo "ERROR: HF_TOKEN secret is missing!"
+            echo "Please add your Hugging Face Access Token as a Repository Secret named 'HF_TOKEN' in GitHub."
+            exit 1
+          fi
+          
           # Push only the backend/ subfolder to the HF Spaces repo.
           # The HF Space (karansingh12/freshscan-api) expects the FastAPI
           # app files at the repo root, so we subtree-push backend/ → root.
