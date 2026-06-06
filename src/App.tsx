@@ -1,3 +1,5 @@
+import { useState, useEffect } from "react";
+import OnboardingTour from "./components/OnboardingTour";
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
@@ -14,9 +16,22 @@ import NotFound from './pages/NotFound';
 import PublicReport from "./pages/PublicReport";
 
 export default function App() {
+  const [runTour, setRunTour] = useState(false);
+
+useEffect(() => {
+  const completed = localStorage.getItem("tour-completed");
+
+  if (!completed) {
+    setTimeout(() => {
+      setRunTour(true);
+      localStorage.setItem("tour-completed", "true");
+    }, 0);
+  }
+}, []);
   return (
     <BrowserRouter>
       {/* Toast provider for global error notifications */}
+      <OnboardingTour run={runTour} />
       <Toaster position="bottom-right" />
       
       {/* Fires a $pageview event to PostHog on every SPA route change */}
