@@ -13,6 +13,7 @@ const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http:/
 // ── Token management ──────────────────────────────────────────────────────────
 
 const TOKEN_KEY = 'fs_access_token';
+const REFRESH_KEY = 'fs_refresh_token';
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -25,7 +26,31 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
   window.dispatchEvent(new Event('auth-change'));
+}
+
+// Calls the backend refresh endpoint to get new tokens
+async function tryRefreshToken(): Promise<boolean> {
+  const refreshToken = localStorage.getItem(REFRESH_KEY);
+  if (!refreshToken) return false;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    localStorage.setItem(REFRESH_KEY, data.refresh_token);
+    window.dispatchEvent(new Event('auth-change'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function isAuthenticated(): boolean {
@@ -41,25 +66,59 @@ function authHeaders(): Record<string, string> {
 
 // ── Shared Error Handling Logic ──────────────────────────────────────────────
 
-async function handleResponse(res: Response): Promise<Response> {
+async function handleResponse(res: Response, retried = false): Promise<Response> {
   if (res.ok) return res;
+
+  // Handle 401 — try to refresh token and retry once
+  if (res.status === 401 && !retried) {
+    const refreshed = await tryRefreshToken();
+    if (!refreshed) {
+      clearToken();
+      window.location.href = '/auth';
+      throw new Error('Session expired. Redirecting to login.');
+    }
+    // Return a special signal to retry
+    return res;
+  }
 
   // Handle 5xx errors (Server Side)
   if (res.status >= 500) {
     const msg = "Server error. Please try again later.";
     toast.error(msg);
-    throw new Error(msg); 
+    throw new Error(msg);
   }
-  
+
   // Handle 4xx errors
   const err = await res.json().catch(() => ({ detail: res.statusText }));
   throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
 }
 
+
+
 // Reusable wrapper to catch network-level drops
 async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
     const res = await fetch(input, init);
+
+    // If 401, try refresh then retry the original request once
+    if (res.status === 401) {
+      const refreshed = await tryRefreshToken();
+      if (!refreshed) {
+        clearToken();
+        window.location.href = '/auth';
+        throw new Error('Session expired. Redirecting to login.');
+      }
+      // Retry original request with new token
+      const retryRes = await fetch(input, {
+        ...init,
+        headers: {
+          ...(init?.headers as Record<string, string> || {}),
+          ...authHeaders(),
+        },
+      });
+      return await handleResponse(retryRes, true);
+    }
+
     return await handleResponse(res);
   } catch (error) {
     if (error instanceof TypeError) {

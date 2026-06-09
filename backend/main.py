@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import Optional
+from auth import router as auth_router
 
 # Load .env file if present (python-dotenv)
 try:
@@ -92,7 +93,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="FreshScan AI", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="FreshScan AI", version="1.1.0", lifespan=lifespan) 
+app.include_router(auth_router)
 
 _cors_origins = ["*"] if CORS_ALLOW_ALL else [
     FRONTEND_URL,
