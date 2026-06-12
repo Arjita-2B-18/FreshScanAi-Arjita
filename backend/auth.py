@@ -22,10 +22,13 @@ async def refresh_session(body: RefreshRequest):
     """
     try:
         # Create a Supabase client using environment variables
-        supabase = create_client(
-            os.environ["SUPABASE_URL"],
-            os.environ["SUPABASE_KEY"]
-        )
+        supabase_url = os.environ.get("SUPABASE_URL")
+        supabase_key = os.environ.get("SUPABASE_KEY")
+
+        if not supabase_url or not supabase_key:
+            raise HTTPException(status_code=500, detail="Supabase environment variables not configured.")
+
+        supabase = create_client(supabase_url, supabase_key)
 
         # Ask Supabase to give us a fresh session using the refresh token
         response = supabase.auth.refresh_session(body.refresh_token)

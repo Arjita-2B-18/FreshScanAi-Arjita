@@ -7,10 +7,8 @@ import type {
   UserProfile,
 } from './types';
 
-// Base URL — override with VITE_API_URL in .env for production
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:8000';
-
-// ── Token management ──────────────────────────────────────────────────────────
+// Base URL
+const API_BASE: string = window.__VITE_API_URL__ || 'http://localhost:8000';
 
 const TOKEN_KEY = 'fs_access_token';
 const REFRESH_KEY = 'fs_refresh_token';
@@ -30,11 +28,18 @@ export function clearToken(): void {
   window.dispatchEvent(new Event('auth-change'));
 }
 
-// Calls the backend refresh endpoint to get new tokens
+export function isAuthenticated(): boolean {
+  return !!getToken();
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function tryRefreshToken(): Promise<boolean> {
   const refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) return false;
-
   try {
     const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
       method: 'POST',
@@ -42,7 +47,6 @@ async function tryRefreshToken(): Promise<boolean> {
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
     if (!res.ok) return false;
-
     const data = await res.json();
     localStorage.setItem(TOKEN_KEY, data.access_token);
     localStorage.setItem(REFRESH_KEY, data.refresh_token);
@@ -53,21 +57,9 @@ async function tryRefreshToken(): Promise<boolean> {
   }
 }
 
-export function isAuthenticated(): boolean {
-  return !!getToken();
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-// ── Shared Error Handling Logic ──────────────────────────────────────────────
-
-// ── Shared Error Handling Logic ──────────────────────────────────────────────
-
-async function handleResponse(res: Response, retried = false): Promise<Response> {
+async function handleResponse(res: Response): Promise<Response> {
   if (res.ok) return res;
+<<<<<<< HEAD
 
   // Handle 401 — try to refresh token and retry once
   if (res.status === 401 && !retried) {
@@ -85,33 +77,27 @@ async function handleResponse(res: Response, retried = false): Promise<Response>
 async function handleResponse(res: Response): Promise<Response> {
   if (res.ok) return res;
 
+=======
+>>>>>>> 8f270f1 (fix: resolve all TypeScript errors in api.ts)
   if (res.status >= 500) {
-    const msg = "Server error. Please try again later.";
+    const msg = 'Server error. Please try again later.';
     toast.error(msg);
     throw new Error(msg);
   }
-
-  // Handle 4xx errors
   const err = await res.json().catch(() => ({ detail: res.statusText }));
   throw new Error((err as { detail?: string }).detail || `HTTP ${res.status}`);
 }
 
-
-
-// Reusable wrapper to catch network-level drops
 async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
     const res = await fetch(input, init);
-
-    // If 401, try refresh then retry the original request once
     if (res.status === 401) {
       const refreshed = await tryRefreshToken();
       if (!refreshed) {
         clearToken();
         window.location.href = '/auth';
-        throw new Error('Session expired. Redirecting to login.');
+        throw new Error('Session expired.');
       }
-      // Retry original request with new token
       const retryRes = await fetch(input, {
         ...init,
         headers: {
@@ -119,15 +105,14 @@ async function safeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
           ...authHeaders(),
         },
       });
-      return await handleResponse(retryRes, true);
+      return await handleResponse(retryRes);
     }
-
     return await handleResponse(res);
   } catch (error) {
     if (error instanceof TypeError) {
-      toast.error("Unable to connect to the server. Please check your internet connection.");
+      toast.error('Unable to connect to the server. Please check your internet connection.');
     }
-    console.error("API Error:", error);
+    console.error('API Error:', error);
     throw error;
   }
 }
@@ -144,13 +129,18 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   return validRes.json() as Promise<T>;
 }
 
+<<<<<<< HEAD
 // ── Response envelopes ────────────────────────────────────────────────────────
 
 export interface ScanResponse    { success: boolean; scan: ScanResult; }
+=======
+export interface ScanResponse { success: boolean; scan: ScanResult; }
+>>>>>>> 8f270f1 (fix: resolve all TypeScript errors in api.ts)
 export interface HistoryResponse { success: boolean; count: number; stats: HistoryStats; scans: HistoryScan[]; }
 export interface MarketsResponse { success: boolean; markets: Market[]; }
 export interface GradcamResponse { gradcam_image: string; predicted_class: string; class_index: number; mode: 'real' | 'demo'; }
 
+<<<<<<< HEAD
 // Metadata sent alongside edge-inference results so the backend can store them
 // without re-running the ML pipeline on the server.
 export interface EdgeInferenceMeta {
@@ -161,10 +151,12 @@ export interface EdgeInferenceMeta {
 
 // ── API surface ───────────────────────────────────────────────────────────────
 
+=======
+>>>>>>> 8f270f1 (fix: resolve all TypeScript errors in api.ts)
 export const api = {
   loginUrl: (): string => `${API_BASE}/api/v1/auth/login/google`,
-
   getMe: (): Promise<UserProfile> => apiFetch<UserProfile>('/api/v1/auth/me'),
+<<<<<<< HEAD
 
   // ── Scans ────────────────────────────────────────────────────────────────
   // meta is optional — when provided (edge inference path), the backend skips
@@ -178,14 +170,19 @@ export const api = {
     if (meta?.fused_score !== undefined) form.append('fused_score', String(meta.fused_score));
     if (meta?.source) form.append('source', meta.source);
 
+=======
+  submitScan: async (blob: Blob): Promise<ScanResponse> => {
+    const form = new FormData();
+    form.append('image', blob, 'scan.jpg');
+>>>>>>> 8f270f1 (fix: resolve all TypeScript errors in api.ts)
     const validRes = await safeFetch(`${API_BASE}/api/v1/scan-auto`, {
       method: 'POST',
       headers: authHeaders(),
       body: form,
     });
-
     return validRes.json() as Promise<ScanResponse>;
   },
+<<<<<<< HEAD
 
   /**
    * Try the HF backend with a single image (same as submitScan with no meta).
@@ -226,19 +223,32 @@ export const api = {
     apiFetch<HistoryResponse>(`/api/v1/scans/history?limit=${limit}&offset=${offset}`),
 
   // ── Grad-CAM ─────────────────────────────────────────────────────────────
+=======
+  getLatestScan: (): Promise<ScanResponse> => apiFetch<ScanResponse>('/api/v1/scans/latest'),
+  getScan: (id: string): Promise<ScanResponse> => apiFetch<ScanResponse>(`/api/v1/scans/${id}`),
+  getScanHistory: (limit = 20, offset = 0): Promise<HistoryResponse> =>
+    apiFetch<HistoryResponse>(`/api/v1/scans/history?limit=${limit}&offset=${offset}`),
+>>>>>>> 8f270f1 (fix: resolve all TypeScript errors in api.ts)
   getGradcam: async (blob: Blob): Promise<GradcamResponse> => {
     const form = new FormData();
     form.append('image', blob, 'gradcam_input.jpg');
-
     const validRes = await safeFetch(`${API_BASE}/api/v1/gradcam`, {
       method: 'POST',
       headers: authHeaders(),
       body: form,
     });
-
     return validRes.json() as Promise<GradcamResponse>;
   },
+<<<<<<< HEAD
 
   getMarkets: (): Promise<MarketsResponse> =>
     apiFetch<MarketsResponse>('/api/v1/maps/markets'),
 };
+=======
+  getMarkets: (): Promise<MarketsResponse> => apiFetch<MarketsResponse>('/api/v1/maps/markets'),
+};
+
+declare global {
+  interface Window { __VITE_API_URL__?: string; }
+}
+>>>>>>> 8f270f1 (fix: resolve all TypeScript errors in api.ts)
